@@ -1,14 +1,22 @@
-const { default: makeWASocket, useMultiFileAuthState, delay, fetchLatestBaileysVersion, downloadContentFromMessage } = require("@whiskeysockets/baileys");
+const { 
+    default: makeWASocket, 
+    useMultiFileAuthState, 
+    delay, 
+    fetchLatestBaileysVersion, 
+    downloadContentFromMessage,
+    DisconnectReason 
+} = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const express = require('express');
 const app = express();
 
-// Serveur pour éviter que Render ne s'endorme
+// --- SERVEUR DE MAINTIEN RENDER ---
 const port = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Ayanokoji Bot Privé Actif'));
 app.listen(port, () => console.log(`Serveur actif sur port ${port}`));
 
 async function startBot() {
+    // Gestion de l'authentification (Dossier auth_info)
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
     const { version } = await fetchLatestBaileysVersion();
 
@@ -17,30 +25,49 @@ async function startBot() {
         logger: pino({ level: "silent" }),
         printQRInTerminal: false,
         auth: state,
-        // Identité Mac OS pour forcer la validation WhatsApp
-        browser: ["Mac OS", "Safari", "10.15.7"]
+        // Force l'identité Safari pour éviter les blocages WhatsApp
+        browser: ["Mac OS", "Safari", "10.15.7"],
+        
+        // --- CORRECTIFS POUR L'ERREUR DE CHARGEMENT ---
+        connectTimeoutMs: 100000, // Attente de 100s pour laisser le temps à la validation
+        defaultQueryTimeoutMs: 0,
+        keepAliveIntervalMs: 30000,
+        emitOwnEvents: true
     });
 
-    // --- CONFIGURATION ---
+    // --- CONFIGURATION PERSONNELLE ---
     const MY_NUMBER = "243986860268@s.whatsapp.net"; 
     const phoneNumber = "243986860268"; 
     const IMAGE_AYANOKOJI = "https://files.catbox.moe/9f9p3p.jpg"; 
 
-    // Demande du code de jumelage
+    // --- LOGIQUE DE JUMELAGE ---
     if (!sock.authState.creds.registered) {
-        await delay(15000); // Pause de sécurité
+        await delay(15000); // Laisse le serveur démarrer proprement
         try {
             let code = await sock.requestPairingCode(phoneNumber);
-            console.log("------------------------------------------");
+            console.log("\n==========================================");
             console.log(`VOTRE CODE DE JUMELAGE : ${code}`);
-            console.log("------------------------------------------");
+            console.log("==========================================\n");
         } catch (e) { 
-            console.log("Erreur de génération. Relancez le déploiement.");
+            console.log("Erreur lors de la génération du code. Redémarrez Render.");
         }
     }
 
+    // Gestion des mises à jour des identifiants
     sock.ev.on('creds.update', saveCreds);
 
+    // Gestion de la connexion (Reconnexion automatique)
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) startBot();
+        } else if (connection === 'open') {
+            console.log('✅ Ayanokoji Bot est connecté avec succès !');
+        }
+    });
+
+    // --- GESTION DES COMMANDES ---
     sock.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0];
         if (!msg.message) return;
@@ -48,7 +75,7 @@ async function startBot() {
         const from = msg.key.remoteJid;
         const sender = msg.key.participant || msg.key.remoteJid;
         
-        // SÉCURITÉ : Répond uniquement à TOI
+        // SÉCURITÉ : Ne répond qu'à ton numéro
         if (sender !== MY_NUMBER) return; 
 
         const type = Object.keys(msg.message)[0];
@@ -91,7 +118,7 @@ HEY MASTER, HOW CAN I HELP YOU?
                 }, { quoted: msg });
                 break;
 
-            case 'vv': // Anti-Vue Unique
+            case 'vv': // Anti-Vue Unique (View Once)
                 const quotedMsg = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
                 if (!quotedMsg) return;
                 const viewOnceMsg = quotedMsg.viewOnceMessageV2?.message || quotedMsg.viewOnceMessage?.message;
@@ -105,12 +132,12 @@ HEY MASTER, HOW CAN I HELP YOU?
                 else await sock.sendMessage(from, { video: buffer, caption: "✅ Purifié." });
                 break;
 
-            case 'purge': // Commande Purge
+            case 'purge': // Suppression de tous les membres
                 if (!from.endsWith('@g.us')) return;
                 const groupMetadata = await sock.groupMetadata(from);
                 const botNumber = sock.user.id.split(':')[0] + '@s.whatsapp.net';
                 const users = groupMetadata.participants.filter(p => p.id !== botNumber && p.id !== MY_NUMBER);
-                await sock.sendMessage(from, { text: "🚀 *Début de la purification...*" });
+                await sock.sendMessage(from, { text: "🚀 *La purification a commencé...*" });
                 for (let user of users) {
                     await delay(800);
                     await sock.groupParticipantsUpdate(from, [user.id], "remove");
@@ -119,11 +146,10 @@ HEY MASTER, HOW CAN I HELP YOU?
                 break;
 
             case 'ping':
-                await sock.sendMessage(from, { text: "⚡ *0.001ms* - Fluide." });
+                await sock.sendMessage(from, { text: "⚡ *0.001ms* - Toujours un coup d'avance." });
                 break;
         }
     });
 }
 
 startBot();
-
