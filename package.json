@@ -1,0 +1,16 @@
+{
+  "name": "ayanokoji-bot",
+  "version": "1.0.0",
+  "description": "Bot WhatsApp Privé Ayanokoji",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "latest",
+    "pino": "^8.0.0",
+    "express": "latest",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
+
